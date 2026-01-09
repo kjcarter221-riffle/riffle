@@ -1,0 +1,21 @@
+{
+  "name": "Riffle - Fly Fishing Companion",
+  "short_name": "Riffle",
+  "description": "AI-powered fly fishing companion with real-time conditions, fly recommendations, and community hatch reports",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c4a6e",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["sports", "lifestyle", "weather"],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
