@@ -35,7 +35,7 @@ export async function POST(request) {
         const userId = session.metadata?.userId || session.subscription_data?.metadata?.userId;
 
         if (userId && session.subscription) {
-          updateSubscription(
+          await updateSubscription(
             parseInt(userId),
             'pro',
             session.customer,
@@ -52,7 +52,7 @@ export async function POST(request) {
 
         if (userId) {
           const status = subscription.status === 'active' ? 'pro' : 'free';
-          updateSubscription(
+          await updateSubscription(
             parseInt(userId),
             status,
             subscription.customer,
@@ -68,7 +68,7 @@ export async function POST(request) {
         const userId = subscription.metadata?.userId;
 
         if (userId) {
-          updateSubscription(parseInt(userId), 'free', subscription.customer, null);
+          await updateSubscription(parseInt(userId), 'free', subscription.customer, null);
           console.log(`User ${userId} subscription cancelled`);
         }
         break;

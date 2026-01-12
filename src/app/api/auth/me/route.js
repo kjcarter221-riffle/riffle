@@ -9,8 +9,8 @@ export async function GET() {
       return NextResponse.json({ user: null });
     }
 
-    const user = getUserById(authUser.id);
-    const stats = getUserStats(authUser.id);
+    const user = await getUserById(authUser.id);
+    const stats = await getUserStats(authUser.id);
 
     return NextResponse.json({ user, stats });
   } catch (error) {

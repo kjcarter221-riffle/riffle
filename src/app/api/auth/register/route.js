@@ -14,12 +14,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
-    const existing = getUserByEmail(email.toLowerCase());
+    const existing = await getUserByEmail(email.toLowerCase());
     if (existing) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 400 });
     }
 
-    const userId = createUser(email.toLowerCase(), password, name || email.split('@')[0]);
+    const userId = await createUser(email.toLowerCase(), password, name || email.split('@')[0]);
     const user = { id: userId, email: email.toLowerCase(), subscription_status: 'free' };
     const token = createToken(user);
 

@@ -13,7 +13,7 @@ export async function GET(request) {
     const publicOnly = searchParams.get('public') === 'true';
 
     if (publicOnly) {
-      const entries = getPublicJournalEntries(
+      const entries = await getPublicJournalEntries(
         parseInt(searchParams.get('limit') || '20'),
         parseInt(searchParams.get('offset') || '0')
       );
@@ -27,11 +27,11 @@ export async function GET(request) {
 
     const entryId = searchParams.get('id');
     if (entryId) {
-      const entry = getJournalEntry(user.id, parseInt(entryId));
+      const entry = await getJournalEntry(user.id, parseInt(entryId));
       return NextResponse.json({ entry: entry ? parseEntry(entry) : null });
     }
 
-    const entries = getJournalEntries(
+    const entries = await getJournalEntries(
       user.id,
       parseInt(searchParams.get('limit') || '50'),
       parseInt(searchParams.get('offset') || '0')
@@ -53,10 +53,10 @@ export async function POST(request) {
 
     // Check free tier limits
     if (!isPro(user)) {
-      const entries = getJournalEntries(user.id, 100, 0);
+      const entries = await getJournalEntries(user.id, 100, 0);
       const thisMonth = new Date().toISOString().slice(0, 7);
       const monthlyEntries = entries.filter(e =>
-        e.created_at?.startsWith(thisMonth)
+        e.created_at?.toString().startsWith(thisMonth)
       );
 
       if (monthlyEntries.length >= 3) {
@@ -73,7 +73,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Title required' }, { status: 400 });
     }
 
-    const entryId = createJournalEntry(user.id, {
+    const entryId = await createJournalEntry(user.id, {
       title: data.title.trim(),
       content: data.content || '',
       location_name: data.location_name,
@@ -112,7 +112,7 @@ export async function PUT(request) {
     }
 
     const { id, ...updates } = data;
-    updateJournalEntry(user.id, id, updates);
+    await updateJournalEntry(user.id, id, updates);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -135,7 +135,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Entry ID required' }, { status: 400 });
     }
 
-    deleteJournalEntry(user.id, parseInt(entryId));
+    await deleteJournalEntry(user.id, parseInt(entryId));
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Journal DELETE error:', error);

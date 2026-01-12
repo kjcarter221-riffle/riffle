@@ -15,7 +15,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Please log in first' }, { status: 401 });
     }
 
-    const dbUser = getUserById(user.id);
+    const dbUser = await getUserById(user.id);
     const stripe = new Stripe(stripeKey);
 
     const { priceId } = await request.json();
@@ -32,7 +32,7 @@ export async function POST(request) {
 
       // Save customer ID
       const { updateUser } = await import('@/lib/db');
-      updateUser(user.id, { stripe_customer_id: customerId });
+      await updateUser(user.id, { stripe_customer_id: customerId });
     }
 
     // Get the base URL

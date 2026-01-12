@@ -14,9 +14,9 @@ export async function GET(request) {
 
     let reports;
     if (river) {
-      reports = getHatchReports({ river_name: river, days, limit, offset });
+      reports = await getHatchReports({ river_name: river, days, limit, offset });
     } else {
-      reports = getRecentHatchReports(limit);
+      reports = await getRecentHatchReports(limit);
     }
 
     return NextResponse.json({ reports });
@@ -43,7 +43,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Hatch type required' }, { status: 400 });
     }
 
-    const reportId = createHatchReport(user.id, {
+    const reportId = await createHatchReport(user.id, {
       river_name: data.river_name.trim(),
       location_name: data.location_name,
       latitude: data.latitude,

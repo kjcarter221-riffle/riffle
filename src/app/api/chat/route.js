@@ -82,7 +82,7 @@ Water Temp: ${riverData.water_temp_f ? riverData.water_temp_f + '°F' : 'N/A'}`;
 
     // Get user's recent journal entries for context
     try {
-      const entries = getJournalEntries(user.id, 5, 0);
+      const entries = await getJournalEntries(user.id, 5, 0);
       if (entries.length > 0) {
         const fliesUsed = [...new Set(entries.flatMap(e => e.flies_used?.split(',').map(f => f.trim()) || []))].filter(Boolean);
         const rivers = [...new Set(entries.map(e => e.river_name).filter(Boolean))];
@@ -98,10 +98,10 @@ Water Temp: ${riverData.water_temp_f ? riverData.water_temp_f + '°F' : 'N/A'}`;
     }
 
     // Save user message
-    saveChatMessage(user.id, 'user', message);
+    await saveChatMessage(user.id, 'user', message);
 
     // Get chat history
-    const history = getChatHistory(user.id, 10);
+    const history = await getChatHistory(user.id, 10);
 
     // Build messages
     const messages = [
@@ -141,7 +141,7 @@ Water Temp: ${riverData.water_temp_f ? riverData.water_temp_f + '°F' : 'N/A'}`;
     }
 
     // Save response
-    saveChatMessage(user.id, 'assistant', response);
+    await saveChatMessage(user.id, 'assistant', response);
 
     return NextResponse.json({
       message: response,

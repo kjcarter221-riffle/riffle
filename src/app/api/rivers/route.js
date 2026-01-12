@@ -37,7 +37,7 @@ export async function GET(request) {
       if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      const rivers = getSavedRivers(user.id);
+      const rivers = await getSavedRivers(user.id);
       return NextResponse.json({ rivers });
     }
 
@@ -61,7 +61,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'River name required' }, { status: 400 });
     }
 
-    saveRiver(user.id, {
+    await saveRiver(user.id, {
       river_name: data.river_name.trim(),
       usgs_site_id: data.usgs_site_id,
       latitude: data.latitude,
@@ -90,7 +90,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'River ID required' }, { status: 400 });
     }
 
-    deleteSavedRiver(user.id, parseInt(riverId));
+    await deleteSavedRiver(user.id, parseInt(riverId));
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Rivers DELETE error:', error);

@@ -15,7 +15,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Please log in first' }, { status: 401 });
     }
 
-    const dbUser = getUserById(user.id);
+    const dbUser = await getUserById(user.id);
     if (!dbUser?.stripe_customer_id) {
       return NextResponse.json({ error: 'No subscription found' }, { status: 400 });
     }

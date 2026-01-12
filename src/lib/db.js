@@ -1,144 +1,129 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { sql } from '@vercel/postgres';
 import bcrypt from 'bcryptjs';
-import fs from 'fs';
 
-const dbPath = path.join(process.cwd(), 'data', 'riffle.db');
+// Initialize database tables
+export async function initDb() {
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT,
+        avatar_url TEXT,
+        subscription_status TEXT DEFAULT 'free',
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        home_river TEXT,
+        home_lat REAL,
+        home_lon REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
 
-let db = null;
+    await sql`
+      CREATE TABLE IF NOT EXISTS journal_entries (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT,
+        content TEXT,
+        location_name TEXT,
+        latitude REAL,
+        longitude REAL,
+        river_name TEXT,
+        water_conditions TEXT,
+        weather TEXT,
+        temperature REAL,
+        wind TEXT,
+        flies_used TEXT,
+        fish_caught INTEGER DEFAULT 0,
+        species TEXT,
+        is_public INTEGER DEFAULT 0,
+        photos TEXT,
+        trip_date DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
 
-export function getDb() {
-  if (!db) {
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    db = new Database(dbPath);
-    initDb();
+    await sql`
+      CREATE TABLE IF NOT EXISTS hatch_reports (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        river_name TEXT NOT NULL,
+        location_name TEXT,
+        latitude REAL,
+        longitude REAL,
+        hatch_type TEXT NOT NULL,
+        hatch_intensity TEXT,
+        flies_working TEXT,
+        water_temp REAL,
+        water_clarity TEXT,
+        flow_rate TEXT,
+        notes TEXT,
+        reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS chat_history (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS saved_rivers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        river_name TEXT NOT NULL,
+        usgs_site_id TEXT,
+        latitude REAL,
+        longitude REAL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    console.log('Database initialized');
+  } catch (error) {
+    console.error('Database init error:', error);
   }
-  return db;
-}
-
-function initDb() {
-  db.exec(`
-    -- Users table
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      name TEXT,
-      avatar_url TEXT,
-      subscription_status TEXT DEFAULT 'free',
-      stripe_customer_id TEXT,
-      stripe_subscription_id TEXT,
-      home_river TEXT,
-      home_lat REAL,
-      home_lon REAL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Journal entries
-    CREATE TABLE IF NOT EXISTS journal_entries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      title TEXT,
-      content TEXT,
-      location_name TEXT,
-      latitude REAL,
-      longitude REAL,
-      river_name TEXT,
-      water_conditions TEXT,
-      weather TEXT,
-      temperature REAL,
-      wind TEXT,
-      flies_used TEXT,
-      fish_caught INTEGER DEFAULT 0,
-      species TEXT,
-      is_public INTEGER DEFAULT 0,
-      photos TEXT,
-      trip_date DATE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    -- Hatch reports (community)
-    CREATE TABLE IF NOT EXISTS hatch_reports (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      river_name TEXT NOT NULL,
-      location_name TEXT,
-      latitude REAL,
-      longitude REAL,
-      hatch_type TEXT NOT NULL,
-      hatch_intensity TEXT,
-      flies_working TEXT,
-      water_temp REAL,
-      water_clarity TEXT,
-      flow_rate TEXT,
-      notes TEXT,
-      reported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    -- Chat history
-    CREATE TABLE IF NOT EXISTS chat_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    -- Saved rivers
-    CREATE TABLE IF NOT EXISTS saved_rivers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      river_name TEXT NOT NULL,
-      usgs_site_id TEXT,
-      latitude REAL,
-      longitude REAL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    -- Indexes
-    CREATE INDEX IF NOT EXISTS idx_journal_user ON journal_entries(user_id);
-    CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(trip_date);
-    CREATE INDEX IF NOT EXISTS idx_journal_public ON journal_entries(is_public);
-    CREATE INDEX IF NOT EXISTS idx_hatch_river ON hatch_reports(river_name);
-    CREATE INDEX IF NOT EXISTS idx_hatch_date ON hatch_reports(reported_at);
-    CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_history(user_id);
-  `);
 }
 
 // ============ USER FUNCTIONS ============
 
-export function createUser(email, password, name) {
-  const db = getDb();
+export async function createUser(email, password, name) {
+  await initDb();
   const hash = bcrypt.hashSync(password, 10);
-  const stmt = db.prepare('INSERT INTO users (email, password, name) VALUES (?, ?, ?)');
-  const result = stmt.run(email, hash, name);
-  return result.lastInsertRowid;
+  const result = await sql`
+    INSERT INTO users (email, password, name)
+    VALUES (${email}, ${hash}, ${name})
+    RETURNING id
+  `;
+  return result.rows[0].id;
 }
 
-export function getUserByEmail(email) {
-  const db = getDb();
-  return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+export async function getUserByEmail(email) {
+  await initDb();
+  const result = await sql`SELECT * FROM users WHERE email = ${email}`;
+  return result.rows[0] || null;
 }
 
-export function getUserById(id) {
-  const db = getDb();
-  return db.prepare(`
+export async function getUserById(id) {
+  await initDb();
+  const result = await sql`
     SELECT id, email, name, avatar_url, subscription_status, home_river, home_lat, home_lon, created_at
-    FROM users WHERE id = ?
-  `).get(id);
+    FROM users WHERE id = ${id}
+  `;
+  return result.rows[0] || null;
 }
 
-export function verifyPassword(email, password) {
-  const user = getUserByEmail(email);
+export async function verifyPassword(email, password) {
+  const user = await getUserByEmail(email);
   if (!user) return null;
   if (bcrypt.compareSync(password, user.password)) {
     const { password: _, ...userWithoutPassword } = user;
@@ -147,233 +132,251 @@ export function verifyPassword(email, password) {
   return null;
 }
 
-export function updateUser(userId, updates) {
-  const db = getDb();
+export async function updateUser(userId, updates) {
+  await initDb();
   const fields = [];
   const values = [];
+  let paramIndex = 1;
 
   for (const [key, value] of Object.entries(updates)) {
     if (value !== undefined && key !== 'id') {
-      fields.push(`${key} = ?`);
+      fields.push(`${key} = $${paramIndex}`);
       values.push(value);
+      paramIndex++;
     }
   }
 
   if (fields.length === 0) return null;
   values.push(userId);
 
-  return db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  // For simple updates, just update one field at a time
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && key !== 'id') {
+      await sql.query(`UPDATE users SET ${key} = $1 WHERE id = $2`, [value, userId]);
+    }
+  }
+  return true;
 }
 
-export function updateSubscription(userId, status, stripeCustomerId, stripeSubscriptionId) {
-  const db = getDb();
-  return db.prepare(`
-    UPDATE users SET subscription_status = ?, stripe_customer_id = ?, stripe_subscription_id = ?
-    WHERE id = ?
-  `).run(status, stripeCustomerId, stripeSubscriptionId, userId);
+export async function updateSubscription(userId, status, stripeCustomerId, stripeSubscriptionId) {
+  await initDb();
+  await sql`
+    UPDATE users
+    SET subscription_status = ${status},
+        stripe_customer_id = ${stripeCustomerId},
+        stripe_subscription_id = ${stripeSubscriptionId}
+    WHERE id = ${userId}
+  `;
 }
 
 // ============ JOURNAL FUNCTIONS ============
 
-export function createJournalEntry(userId, entry) {
-  const db = getDb();
-  const stmt = db.prepare(`
+export async function createJournalEntry(userId, entry) {
+  await initDb();
+  const result = await sql`
     INSERT INTO journal_entries (
       user_id, title, content, location_name, latitude, longitude, river_name,
       water_conditions, weather, temperature, wind, flies_used, fish_caught,
       species, is_public, photos, trip_date
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(
-    userId, entry.title, entry.content, entry.location_name, entry.latitude,
-    entry.longitude, entry.river_name, entry.water_conditions, entry.weather,
-    entry.temperature, entry.wind, entry.flies_used, entry.fish_caught || 0,
-    entry.species, entry.is_public ? 1 : 0,
-    entry.photos ? JSON.stringify(entry.photos) : null,
-    entry.trip_date || new Date().toISOString().split('T')[0]
-  );
-  return result.lastInsertRowid;
+    ) VALUES (
+      ${userId}, ${entry.title}, ${entry.content}, ${entry.location_name},
+      ${entry.latitude}, ${entry.longitude}, ${entry.river_name},
+      ${entry.water_conditions}, ${entry.weather}, ${entry.temperature},
+      ${entry.wind}, ${entry.flies_used}, ${entry.fish_caught || 0},
+      ${entry.species}, ${entry.is_public ? 1 : 0},
+      ${entry.photos ? JSON.stringify(entry.photos) : null},
+      ${entry.trip_date || new Date().toISOString().split('T')[0]}
+    )
+    RETURNING id
+  `;
+  return result.rows[0].id;
 }
 
-export function getJournalEntries(userId, limit = 50, offset = 0) {
-  const db = getDb();
-  return db.prepare(`
+export async function getJournalEntries(userId, limit = 50, offset = 0) {
+  await initDb();
+  const result = await sql`
     SELECT * FROM journal_entries
-    WHERE user_id = ?
+    WHERE user_id = ${userId}
     ORDER BY trip_date DESC, created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(userId, limit, offset);
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+  return result.rows;
 }
 
-export function getJournalEntry(userId, entryId) {
-  const db = getDb();
-  return db.prepare('SELECT * FROM journal_entries WHERE id = ? AND user_id = ?').get(entryId, userId);
+export async function getJournalEntry(userId, entryId) {
+  await initDb();
+  const result = await sql`
+    SELECT * FROM journal_entries WHERE id = ${entryId} AND user_id = ${userId}
+  `;
+  return result.rows[0] || null;
 }
 
-export function updateJournalEntry(userId, entryId, updates) {
-  const db = getDb();
-  const fields = [];
-  const values = [];
-
+export async function updateJournalEntry(userId, entryId, updates) {
+  await initDb();
   for (const [key, value] of Object.entries(updates)) {
     if (value !== undefined && key !== 'id' && key !== 'user_id') {
-      fields.push(`${key} = ?`);
-      values.push(key === 'photos' && Array.isArray(value) ? JSON.stringify(value) : value);
+      const val = key === 'photos' && Array.isArray(value) ? JSON.stringify(value) : value;
+      await sql.query(
+        `UPDATE journal_entries SET ${key} = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+        [val, entryId, userId]
+      );
     }
   }
-
-  if (fields.length === 0) return null;
-  fields.push('updated_at = CURRENT_TIMESTAMP');
-  values.push(entryId, userId);
-
-  return db.prepare(`UPDATE journal_entries SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
+  return true;
 }
 
-export function deleteJournalEntry(userId, entryId) {
-  const db = getDb();
-  return db.prepare('DELETE FROM journal_entries WHERE id = ? AND user_id = ?').run(entryId, userId);
+export async function deleteJournalEntry(userId, entryId) {
+  await initDb();
+  await sql`DELETE FROM journal_entries WHERE id = ${entryId} AND user_id = ${userId}`;
 }
 
-export function getPublicJournalEntries(limit = 20, offset = 0) {
-  const db = getDb();
-  return db.prepare(`
+export async function getPublicJournalEntries(limit = 20, offset = 0) {
+  await initDb();
+  const result = await sql`
     SELECT j.*, u.name as author_name, u.avatar_url as author_avatar
     FROM journal_entries j
     JOIN users u ON j.user_id = u.id
     WHERE j.is_public = 1
     ORDER BY j.trip_date DESC
-    LIMIT ? OFFSET ?
-  `).all(limit, offset);
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+  return result.rows;
 }
 
 // ============ HATCH REPORT FUNCTIONS ============
 
-export function createHatchReport(userId, report) {
-  const db = getDb();
-  const stmt = db.prepare(`
+export async function createHatchReport(userId, report) {
+  await initDb();
+  const result = await sql`
     INSERT INTO hatch_reports (
       user_id, river_name, location_name, latitude, longitude, hatch_type,
       hatch_intensity, flies_working, water_temp, water_clarity, flow_rate, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(
-    userId, report.river_name, report.location_name, report.latitude,
-    report.longitude, report.hatch_type, report.hatch_intensity,
-    report.flies_working, report.water_temp, report.water_clarity,
-    report.flow_rate, report.notes
-  );
-  return result.lastInsertRowid;
+    ) VALUES (
+      ${userId}, ${report.river_name}, ${report.location_name}, ${report.latitude},
+      ${report.longitude}, ${report.hatch_type}, ${report.hatch_intensity},
+      ${report.flies_working}, ${report.water_temp}, ${report.water_clarity},
+      ${report.flow_rate}, ${report.notes}
+    )
+    RETURNING id
+  `;
+  return result.rows[0].id;
 }
 
-export function getHatchReports(options = {}) {
-  const db = getDb();
-  let query = `
-    SELECT h.*, u.name as reporter_name
-    FROM hatch_reports h
-    JOIN users u ON h.user_id = u.id
-  `;
-  const params = [];
-  const conditions = [];
+export async function getHatchReports(options = {}) {
+  await initDb();
+  let result;
 
   if (options.river_name) {
-    conditions.push('h.river_name LIKE ?');
-    params.push(`%${options.river_name}%`);
+    result = await sql`
+      SELECT h.*, u.name as reporter_name
+      FROM hatch_reports h
+      JOIN users u ON h.user_id = u.id
+      WHERE h.river_name ILIKE ${'%' + options.river_name + '%'}
+        AND h.reported_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      ORDER BY h.reported_at DESC
+      LIMIT ${options.limit || 50} OFFSET ${options.offset || 0}
+    `;
+  } else {
+    result = await sql`
+      SELECT h.*, u.name as reporter_name
+      FROM hatch_reports h
+      JOIN users u ON h.user_id = u.id
+      WHERE h.reported_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      ORDER BY h.reported_at DESC
+      LIMIT ${options.limit || 50} OFFSET ${options.offset || 0}
+    `;
   }
-
-  if (options.days) {
-    conditions.push("h.reported_at >= datetime('now', ? || ' days')");
-    params.push(-options.days);
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-
-  query += ' ORDER BY h.reported_at DESC LIMIT ? OFFSET ?';
-  params.push(options.limit || 50, options.offset || 0);
-
-  return db.prepare(query).all(...params);
+  return result.rows;
 }
 
-export function getRecentHatchReports(limit = 20) {
-  const db = getDb();
-  return db.prepare(`
+export async function getRecentHatchReports(limit = 20) {
+  await initDb();
+  const result = await sql`
     SELECT h.*, u.name as reporter_name
     FROM hatch_reports h
     JOIN users u ON h.user_id = u.id
-    WHERE h.reported_at >= datetime('now', '-7 days')
+    WHERE h.reported_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
     ORDER BY h.reported_at DESC
-    LIMIT ?
-  `).all(limit);
+    LIMIT ${limit}
+  `;
+  return result.rows;
 }
 
 // ============ CHAT FUNCTIONS ============
 
-export function saveChatMessage(userId, role, content) {
-  const db = getDb();
-  return db.prepare('INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)').run(userId, role, content);
+export async function saveChatMessage(userId, role, content) {
+  await initDb();
+  await sql`
+    INSERT INTO chat_history (user_id, role, content)
+    VALUES (${userId}, ${role}, ${content})
+  `;
 }
 
-export function getChatHistory(userId, limit = 20) {
-  const db = getDb();
-  return db.prepare(`
+export async function getChatHistory(userId, limit = 20) {
+  await initDb();
+  const result = await sql`
     SELECT role, content, created_at FROM chat_history
-    WHERE user_id = ? ORDER BY created_at DESC LIMIT ?
-  `).all(userId, limit).reverse();
+    WHERE user_id = ${userId}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return result.rows.reverse();
 }
 
-export function clearChatHistory(userId) {
-  const db = getDb();
-  return db.prepare('DELETE FROM chat_history WHERE user_id = ?').run(userId);
+export async function clearChatHistory(userId) {
+  await initDb();
+  await sql`DELETE FROM chat_history WHERE user_id = ${userId}`;
 }
 
 // ============ SAVED RIVERS FUNCTIONS ============
 
-export function saveRiver(userId, river) {
-  const db = getDb();
-  const stmt = db.prepare(`
+export async function saveRiver(userId, river) {
+  await initDb();
+  await sql`
     INSERT INTO saved_rivers (user_id, river_name, usgs_site_id, latitude, longitude, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  return stmt.run(userId, river.river_name, river.usgs_site_id, river.latitude, river.longitude, river.notes);
+    VALUES (${userId}, ${river.river_name}, ${river.usgs_site_id}, ${river.latitude}, ${river.longitude}, ${river.notes})
+  `;
 }
 
-export function getSavedRivers(userId) {
-  const db = getDb();
-  return db.prepare('SELECT * FROM saved_rivers WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+export async function getSavedRivers(userId) {
+  await initDb();
+  const result = await sql`
+    SELECT * FROM saved_rivers WHERE user_id = ${userId} ORDER BY created_at DESC
+  `;
+  return result.rows;
 }
 
-export function deleteSavedRiver(userId, riverId) {
-  const db = getDb();
-  return db.prepare('DELETE FROM saved_rivers WHERE id = ? AND user_id = ?').run(riverId, userId);
+export async function deleteSavedRiver(userId, riverId) {
+  await initDb();
+  await sql`DELETE FROM saved_rivers WHERE id = ${riverId} AND user_id = ${userId}`;
 }
 
 // ============ STATS FUNCTIONS ============
 
-export function getUserStats(userId) {
-  const db = getDb();
+export async function getUserStats(userId) {
+  await initDb();
 
-  const totalTrips = db.prepare('SELECT COUNT(*) as count FROM journal_entries WHERE user_id = ?').get(userId);
-  const totalFish = db.prepare('SELECT SUM(fish_caught) as total FROM journal_entries WHERE user_id = ?').get(userId);
-  const speciesCount = db.prepare(`
-    SELECT COUNT(DISTINCT species) as count FROM journal_entries WHERE user_id = ? AND species IS NOT NULL
-  `).get(userId);
-  const topFlies = db.prepare(`
+  const totalTrips = await sql`SELECT COUNT(*) as count FROM journal_entries WHERE user_id = ${userId}`;
+  const totalFish = await sql`SELECT COALESCE(SUM(fish_caught), 0) as total FROM journal_entries WHERE user_id = ${userId}`;
+  const speciesCount = await sql`
+    SELECT COUNT(DISTINCT species) as count FROM journal_entries WHERE user_id = ${userId} AND species IS NOT NULL
+  `;
+  const topFlies = await sql`
     SELECT flies_used, SUM(fish_caught) as fish FROM journal_entries
-    WHERE user_id = ? AND flies_used IS NOT NULL
+    WHERE user_id = ${userId} AND flies_used IS NOT NULL
     GROUP BY flies_used ORDER BY fish DESC LIMIT 5
-  `).all(userId);
-  const topRivers = db.prepare(`
+  `;
+  const topRivers = await sql`
     SELECT river_name, COUNT(*) as trips, SUM(fish_caught) as fish FROM journal_entries
-    WHERE user_id = ? AND river_name IS NOT NULL
+    WHERE user_id = ${userId} AND river_name IS NOT NULL
     GROUP BY river_name ORDER BY trips DESC LIMIT 5
-  `).all(userId);
+  `;
 
   return {
-    totalTrips: totalTrips.count,
-    totalFish: totalFish.total || 0,
-    speciesCount: speciesCount.count,
-    topFlies,
-    topRivers
+    totalTrips: parseInt(totalTrips.rows[0]?.count || 0),
+    totalFish: parseInt(totalFish.rows[0]?.total || 0),
+    speciesCount: parseInt(speciesCount.rows[0]?.count || 0),
+    topFlies: topFlies.rows,
+    topRivers: topRivers.rows
   };
 }
