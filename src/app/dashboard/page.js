@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Navigation from '@/components/Navigation';
 import {
   Fish, CloudSun, BookOpen, MessageCircle, TrendingUp, Droplets,
-  LogOut, Crown, ChevronRight, Thermometer, Wind, Moon
+  LogOut, Crown, ChevronRight, Thermometer, Wind, Moon, Settings
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -72,9 +72,12 @@ export default function DashboardPage() {
       <header className="safe-top sticky top-0 z-40 glass border-b border-white/20">
         <div className="px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-river-500 to-forest-500 rounded-full flex items-center justify-center text-white font-semibold">
+            <Link
+              href="/settings"
+              className="w-10 h-10 bg-gradient-to-br from-river-500 to-forest-500 rounded-full flex items-center justify-center text-white font-semibold hover:opacity-90 transition-opacity"
+            >
               {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase()}
-            </div>
+            </Link>
             <div>
               <h1 className="font-semibold text-stone-900">Hey, {user?.name || 'Angler'}!</h1>
               <p className="text-xs text-stone-500">
