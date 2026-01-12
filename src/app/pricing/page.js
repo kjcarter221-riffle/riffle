@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -8,7 +8,7 @@ import {
   MessageCircle, BookOpen, CloudSun, Wifi, TrendingUp
 } from 'lucide-react';
 
-export default function PricingPage() {
+function PricingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState(null);
@@ -217,5 +217,13 @@ function FeatureBox({ icon, title, description }) {
       <h4 className="font-semibold text-stone-900">{title}</h4>
       <p className="text-xs text-stone-500">{description}</p>
     </div>
+  );
+}
+
+export default function PricingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <PricingContent />
+    </Suspense>
   );
 }
