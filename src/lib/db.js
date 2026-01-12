@@ -88,6 +88,24 @@ export async function initDb() {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMP NOT NULL,
+        used INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    // Create indexes for performance
+    await sql`CREATE INDEX IF NOT EXISTS idx_journal_user ON journal_entries(user_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(trip_date)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_hatch_river ON hatch_reports(river_name)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_history(user_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_reset_token ON password_reset_tokens(token)`;
+
     console.log('Database initialized');
   } catch (error) {
     console.error('Database init error:', error);
@@ -379,4 +397,55 @@ export async function getUserStats(userId) {
     topFlies: topFlies.rows,
     topRivers: topRivers.rows
   };
+}
+
+// ============ PASSWORD RESET FUNCTIONS ============
+
+export async function createPasswordResetToken(userId) {
+  await initDb();
+  // Generate a random token
+  const token = crypto.randomUUID() + '-' + crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+  await sql`
+    INSERT INTO password_reset_tokens (user_id, token, expires_at)
+    VALUES (${userId}, ${token}, ${expiresAt.toISOString()})
+  `;
+
+  return token;
+}
+
+export async function verifyPasswordResetToken(token) {
+  await initDb();
+  const result = await sql`
+    SELECT prt.*, u.email
+    FROM password_reset_tokens prt
+    JOIN users u ON prt.user_id = u.id
+    WHERE prt.token = ${token}
+      AND prt.used = 0
+      AND prt.expires_at > CURRENT_TIMESTAMP
+  `;
+
+  return result.rows[0] || null;
+}
+
+export async function usePasswordResetToken(token, newPassword) {
+  await initDb();
+  const tokenData = await verifyPasswordResetToken(token);
+  if (!tokenData) return false;
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+
+  // Update password
+  await sql`UPDATE users SET password = ${hash} WHERE id = ${tokenData.user_id}`;
+
+  // Mark token as used
+  await sql`UPDATE password_reset_tokens SET used = 1 WHERE token = ${token}`;
+
+  return true;
+}
+
+export async function cleanupExpiredTokens() {
+  await initDb();
+  await sql`DELETE FROM password_reset_tokens WHERE expires_at < CURRENT_TIMESTAMP OR used = 1`;
 }

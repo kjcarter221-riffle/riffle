@@ -4,6 +4,8 @@ import {
   createJournalEntry, getJournalEntries, getJournalEntry,
   updateJournalEntry, deleteJournalEntry, getPublicJournalEntries
 } from '@/lib/db';
+import { sanitizeText, sanitizeCoordinates, sanitizePositiveInt } from '@/lib/sanitize';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,27 +69,39 @@ export async function POST(request) {
       }
     }
 
+    // Rate limit journal creation
+    const rateCheck = checkRateLimit(`journal:${user.id}`, RATE_LIMITS.api);
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     const data = await request.json();
 
     if (!data.title?.trim()) {
       return NextResponse.json({ error: 'Title required' }, { status: 400 });
     }
 
+    // Sanitize coordinates
+    const coords = sanitizeCoordinates(data.latitude, data.longitude);
+
     const entryId = await createJournalEntry(user.id, {
-      title: data.title.trim(),
-      content: data.content || '',
-      location_name: data.location_name,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      river_name: data.river_name,
-      water_conditions: data.water_conditions,
-      weather: data.weather,
+      title: sanitizeText(data.title),
+      content: sanitizeText(data.content) || '',
+      location_name: sanitizeText(data.location_name),
+      latitude: coords.lat,
+      longitude: coords.lon,
+      river_name: sanitizeText(data.river_name),
+      water_conditions: sanitizeText(data.water_conditions),
+      weather: sanitizeText(data.weather),
       temperature: data.temperature,
-      wind: data.wind,
-      flies_used: data.flies_used,
-      fish_caught: data.fish_caught || 0,
-      species: data.species,
-      is_public: data.is_public || false,
+      wind: sanitizeText(data.wind),
+      flies_used: sanitizeText(data.flies_used),
+      fish_caught: sanitizePositiveInt(data.fish_caught, 1000) || 0,
+      species: sanitizeText(data.species),
+      is_public: Boolean(data.is_public),
       photos: data.photos || [],
       trip_date: data.trip_date
     });

@@ -1,7 +1,14 @@
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'riffle-jwt-secret-change-in-production-please';
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Require JWT_SECRET in production - never use default in prod
+if (isProduction && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required in production');
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-do-not-use-in-prod';
 
 export function createToken(user) {
   return jwt.sign(
@@ -35,7 +42,8 @@ export async function getCurrentUser() {
 }
 
 export function setAuthCookie(token) {
-  return `riffle_auth=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${30 * 24 * 60 * 60}; Secure`;
+  const secure = isProduction ? '; Secure' : '';
+  return `riffle_auth=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${30 * 24 * 60 * 60}${secure}`;
 }
 
 export function clearAuthCookie() {

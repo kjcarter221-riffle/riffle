@@ -3,6 +3,7 @@ import { getCurrentUser, isPro } from '@/lib/auth';
 import { saveChatMessage, getChatHistory, getJournalEntries } from '@/lib/db';
 import { getWeather, getMoonPhase, calculateFishingScore } from '@/lib/conditions';
 import { getRiverData } from '@/lib/river';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import OpenAI from 'openai';
 
 const SYSTEM_PROMPT = `You are Riffle, an expert AI fly fishing guide with decades of experience on rivers across North America. You help fly anglers with:
@@ -38,10 +39,24 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Please log in to use the AI assistant' }, { status: 401 });
     }
 
+    // Rate limit by user ID (50 messages per hour)
+    const rateCheck = checkRateLimit(`chat:${user.id}`, RATE_LIMITS.chat);
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        { error: 'Chat limit reached. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': Math.ceil(rateCheck.resetIn / 1000).toString() } }
+      );
+    }
+
     const { message, location, riverId } = await request.json();
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
+    }
+
+    // Limit message length to prevent abuse
+    if (message.length > 2000) {
+      return NextResponse.json({ error: 'Message too long (max 2000 characters)' }, { status: 400 });
     }
 
     // Build context from conditions

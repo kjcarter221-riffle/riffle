@@ -17,6 +17,14 @@ export async function POST(request) {
 
     let event;
 
+    // In production, ALWAYS require webhook signature verification
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isProduction && !webhookSecret) {
+      console.error('STRIPE_WEBHOOK_SECRET is required in production');
+      return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+    }
+
     if (webhookSecret && signature) {
       try {
         event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
@@ -24,7 +32,12 @@ export async function POST(request) {
         console.error('Webhook signature verification failed:', err.message);
         return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
       }
+    } else if (isProduction) {
+      // Should never reach here if webhookSecret check above works
+      return NextResponse.json({ error: 'Signature required' }, { status: 400 });
     } else {
+      // Development only - allow unsigned webhooks for testing
+      console.warn('WARNING: Processing unsigned webhook (dev mode only)');
       event = JSON.parse(body);
     }
 
