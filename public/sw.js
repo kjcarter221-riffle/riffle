@@ -83,8 +83,71 @@ self.addEventListener('sync', (event) => {
   }
 });
 
-async function syncJournalEntries() {
-  // Get pending entries from IndexedDB and sync them
-  // This will be implemented when online
-  console.log('Syncing offline journal entries...');
+// IndexedDB helper for service worker
+const DB_NAME = 'riffle-offline';
+const STORE_PENDING = 'pending-entries';
+
+async function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
 }
+
+async function syncJournalEntries() {
+  console.log('Syncing offline journal entries...');
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_PENDING, 'readonly');
+    const store = tx.objectStore(STORE_PENDING);
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+
+      request.onsuccess = async () => {
+        const pending = request.result;
+        console.log(`Found ${pending.length} pending entries`);
+
+        for (const entry of pending) {
+          try {
+            const res = await fetch('/api/journal', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(entry)
+            });
+
+            if (res.ok) {
+              // Remove from pending store
+              const deleteTx = db.transaction(STORE_PENDING, 'readwrite');
+              deleteTx.objectStore(STORE_PENDING).delete(entry.localId);
+              console.log(`Synced entry: ${entry.title}`);
+            }
+          } catch (err) {
+            console.error('Failed to sync entry:', err);
+          }
+        }
+
+        // Notify any open pages that sync is complete
+        const clients = await self.clients.matchAll();
+        clients.forEach(client => {
+          client.postMessage({ type: 'SYNC_COMPLETE', count: pending.length });
+        });
+
+        resolve();
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error('Sync failed:', err);
+  }
+}
+
+// Listen for messages from the app
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'TRIGGER_SYNC') {
+    syncJournalEntries();
+  }
+});

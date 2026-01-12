@@ -19,6 +19,7 @@
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "@vercel/postgres": "^0.10.0",
+    "@vercel/blob": "^0.23.0",
     "lucide-react": "^0.395.0",
     "date-fns": "^3.6.0"
   },

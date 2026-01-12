@@ -1,21 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navigation from '@/components/Navigation';
 import {
   BookOpen, Plus, Calendar, MapPin, Fish, CloudSun,
-  ChevronRight, X, Eye, EyeOff, Trash2
+  ChevronRight, X, Eye, EyeOff, Trash2, Camera, Image, WifiOff, RefreshCw
 } from 'lucide-react';
+import {
+  addPendingEntry, getPendingEntries, syncPendingEntries,
+  cacheEntries, getCachedEntries, isOnline, initDB
+} from '@/lib/offlineStorage';
 
 export default function JournalPage() {
   const router = useRouter();
   const [entries, setEntries] = useState([]);
+  const [pendingEntries, setPendingEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [online, setOnline] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -27,28 +34,107 @@ export default function JournalPage() {
     species: '',
     weather: '',
     is_public: false,
-    trip_date: new Date().toISOString().split('T')[0]
+    trip_date: new Date().toISOString().split('T')[0],
+    photos: []
   });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
+    // Initialize IndexedDB
+    initDB().catch(console.error);
+
+    // Check auth
     fetch('/api/auth/me')
       .then(res => res.json())
       .then(data => {
         if (!data.user) router.push('/login');
+      })
+      .catch(() => {
+        // Offline - allow viewing cached entries
       });
 
     fetchEntries();
+    loadPendingEntries();
+
+    // Listen for online/offline events
+    const handleOnline = () => {
+      setOnline(true);
+      handleSync();
+    };
+    const handleOffline = () => setOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setOnline(navigator.onLine);
+
+    // Listen for sync complete messages from service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'SYNC_COMPLETE') {
+          loadPendingEntries();
+          fetchEntries();
+        }
+      });
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, [router]);
 
   const fetchEntries = async () => {
     try {
-      const res = await fetch('/api/journal');
-      const data = await res.json();
-      setEntries(data.entries || []);
+      if (isOnline()) {
+        const res = await fetch('/api/journal');
+        const data = await res.json();
+        const serverEntries = data.entries || [];
+        setEntries(serverEntries);
+        // Cache entries for offline use
+        await cacheEntries(serverEntries);
+      } else {
+        // Load from cache when offline
+        const cached = await getCachedEntries();
+        setEntries(cached);
+      }
     } catch (err) {
       console.error('Failed to fetch entries:', err);
+      // Try loading from cache
+      try {
+        const cached = await getCachedEntries();
+        setEntries(cached);
+      } catch {
+        // No cached entries
+      }
     }
     setLoading(false);
+  };
+
+  const loadPendingEntries = async () => {
+    try {
+      const pending = await getPendingEntries();
+      setPendingEntries(pending);
+    } catch (err) {
+      console.error('Failed to load pending entries:', err);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!isOnline() || syncing) return;
+    setSyncing(true);
+    try {
+      const { synced, failed } = await syncPendingEntries();
+      if (synced.length > 0) {
+        await loadPendingEntries();
+        await fetchEntries();
+      }
+      if (failed.length > 0) {
+        setError(`${failed.length} entries failed to sync`);
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+    }
+    setSyncing(false);
   };
 
   const handleSubmit = async (e) => {
@@ -57,21 +143,38 @@ export default function JournalPage() {
     setSaving(true);
 
     try {
-      const res = await fetch('/api/journal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
+      if (isOnline()) {
+        // Online - save to server
+        const res = await fetch('/api/journal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.error || 'Failed to save');
-        if (data.upgrade) {
-          setError('You\'ve reached your free limit (3/month). Upgrade to Pro for unlimited entries!');
+        if (!res.ok) {
+          setError(data.error || 'Failed to save');
+          if (data.upgrade) {
+            setError('You\'ve reached your free limit (3/month). Upgrade to Pro for unlimited entries!');
+          }
+          setSaving(false);
+          return;
         }
-        setSaving(false);
-        return;
+      } else {
+        // Offline - save to IndexedDB
+        await addPendingEntry(form);
+        await loadPendingEntries();
+
+        // Request background sync when back online
+        if ('serviceWorker' in navigator && 'sync' in window.registration) {
+          try {
+            await navigator.serviceWorker.ready;
+            await window.registration.sync.register('sync-journal');
+          } catch (err) {
+            console.log('Background sync not available');
+          }
+        }
       }
 
       setShowNew(false);
@@ -84,7 +187,8 @@ export default function JournalPage() {
         species: '',
         weather: '',
         is_public: false,
-        trip_date: new Date().toISOString().split('T')[0]
+        trip_date: new Date().toISOString().split('T')[0],
+        photos: []
       });
       fetchEntries();
     } catch (err) {
@@ -99,6 +203,47 @@ export default function JournalPage() {
     fetchEntries();
   };
 
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    setUploading(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      files.forEach(file => formData.append('files', file));
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Upload failed');
+        setUploading(false);
+        return;
+      }
+
+      setForm(prev => ({
+        ...prev,
+        photos: [...prev.photos, ...data.photos.map(p => p.url)]
+      }));
+    } catch (err) {
+      setError('Failed to upload photos');
+    }
+    setUploading(false);
+  };
+
+  const removePhoto = (index) => {
+    setForm(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index)
+    }));
+  };
+
   return (
     <div className="min-h-screen pb-24">
       {/* Header */}
@@ -109,7 +254,14 @@ export default function JournalPage() {
               <BookOpen className="w-5 h-5 text-forest-600" />
             </div>
             <div>
-              <h1 className="font-semibold text-stone-900">Journal</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold text-stone-900">Journal</h1>
+                {!online && (
+                  <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                    <WifiOff className="w-3 h-3" /> Offline
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-stone-500">{entries.length} entries</p>
             </div>
           </div>
@@ -120,6 +272,25 @@ export default function JournalPage() {
             <Plus className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Pending entries banner */}
+        {pendingEntries.length > 0 && (
+          <div className="px-4 py-2 bg-amber-50 border-t border-amber-100 flex items-center justify-between">
+            <span className="text-sm text-amber-700">
+              {pendingEntries.length} pending {pendingEntries.length === 1 ? 'entry' : 'entries'} waiting to sync
+            </span>
+            {online && (
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="flex items-center gap-1 text-sm text-amber-700 hover:text-amber-800 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync now'}
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       <main className="px-4 py-6">
@@ -168,6 +339,24 @@ export default function JournalPage() {
                     </button>
                   </div>
                 </div>
+
+                {entry.photos && entry.photos.length > 0 && (
+                  <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
+                    {entry.photos.slice(0, 4).map((photo, idx) => (
+                      <img
+                        key={idx}
+                        src={photo}
+                        alt=""
+                        className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+                      />
+                    ))}
+                    {entry.photos.length > 4 && (
+                      <div className="w-16 h-16 bg-stone-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm text-stone-500">+{entry.photos.length - 4}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {entry.content && (
                   <p className="text-sm text-stone-600 mb-3 line-clamp-2">{entry.content}</p>
@@ -287,6 +476,51 @@ export default function JournalPage() {
                   className="input min-h-[100px]"
                   placeholder="What worked, conditions, memorable moments..."
                 />
+              </div>
+
+              {/* Photo Upload */}
+              <div>
+                <label className="label">Photos</label>
+                <div className="space-y-3">
+                  {form.photos.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {form.photos.map((photo, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={photo}
+                            alt={`Photo ${index + 1}`}
+                            className="w-20 h-20 object-cover rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(index)}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-stone-300 rounded-xl cursor-pointer hover:border-river-400 hover:bg-river-50 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                    {uploading ? (
+                      <span className="text-sm text-stone-500">Uploading...</span>
+                    ) : (
+                      <>
+                        <Camera className="w-5 h-5 text-stone-400" />
+                        <span className="text-sm text-stone-500">Add photos</span>
+                      </>
+                    )}
+                  </label>
+                </div>
               </div>
 
               <div className="flex items-center gap-3">
