@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getWeather, getMoonPhase, calculateFishingScore, getBestTimes } from '@/lib/conditions';
 import { getRiverData, POPULAR_RIVERS, getWaterTempClassification, getFlowClassification } from '@/lib/river';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);

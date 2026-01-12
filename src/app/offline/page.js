@@ -1,3 +1,5 @@
+'use client';
+
 import { WifiOff, Fish, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 

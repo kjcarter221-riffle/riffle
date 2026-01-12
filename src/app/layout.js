@@ -4,19 +4,20 @@ export const metadata = {
   title: 'Riffle - AI Fly Fishing Companion',
   description: 'Real-time conditions, AI fly recommendations, and community hatch reports for fly anglers',
   manifest: '/manifest.json',
-  themeColor: '#0ea5e9',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: 'cover',
-  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Riffle',
   },
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#0ea5e9',
 }
 
 export default function RootLayout({ children }) {

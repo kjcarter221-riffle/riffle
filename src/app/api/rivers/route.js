@@ -3,6 +3,8 @@ import { getCurrentUser } from '@/lib/auth';
 import { saveRiver, getSavedRivers, deleteSavedRiver } from '@/lib/db';
 import { getRiverData, searchUSGSSites, POPULAR_RIVERS } from '@/lib/river';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
